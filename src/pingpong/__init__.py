@@ -1,71 +1,72 @@
 import json
 import logging
-import asyncio
-import aiohttp
+import os
 import sys
 import tempfile
-import os
 import time
+import urllib.request
 from pathlib import Path
+from threading import Thread
 
 from deltachat_rpc_client import DeltaChat, EventType, Rpc
 
 
-async def get_temp_credentials() -> dict:
+def get_temp_credentials() -> dict:
     url = os.getenv("DCC_NEW_TMP_EMAIL")
     assert url, "Failed to get online account, DCC_NEW_TMP_EMAIL is not set"
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url) as response:
-            return json.loads(await response.text())
+
+    request = urllib.request.Request(url, method="POST")
+    with urllib.request.urlopen(request, timeout=60) as f:
+        return json.load(f)
 
 
-async def run(api, window, limit):
+def run(api, window, limit):
     accounts = []
     for _ in range(2):
-        creds = await get_temp_credentials()
-        account = await api.add_account()
+        creds = get_temp_credentials()
+        account = api.add_account()
 
-        await account.set_config("bot", "1")
-        await account.set_config("bcc_self", "0")
-        await account.set_config("mvbox_move", "0")
-        await account.set_config("mdns_enabled", "0")
-        await account.set_config("e2ee_enabled", "0")
+        account.set_config("bot", "1")
+        account.set_config("bcc_self", "0")
+        account.set_config("mvbox_move", "0")
+        account.set_config("mdns_enabled", "0")
+        account.set_config("e2ee_enabled", "0")
 
-        await account.set_config("mail_port", "993")
-        await account.set_config("send_port", "465")
+        account.set_config("mail_port", "993")
+        account.set_config("send_port", "465")
 
-        await account.set_config("socks5_enabled", "0")
-        await account.set_config("socks5_host", "127.0.0.1")
-        await account.set_config("socks5_port", "9050")
+        account.set_config("socks5_enabled", "0")
+        account.set_config("socks5_host", "127.0.0.1")
+        account.set_config("socks5_port", "9050")
 
-        assert not await account.is_configured()
+        assert not account.is_configured()
 
-        await account.set_config("addr", creds["email"])
-        await account.set_config("mail_pw", creds["password"])
-        await account.configure()
-        await account.start_io()
+        account.set_config("addr", creds["email"])
+        account.set_config("mail_pw", creds["password"])
+        account.configure()
+        account.start_io()
         accounts.append(account)
     logging.info("Configured accounts")
 
-    async def process_messages(account) -> bool:
-        for message in await account.get_fresh_messages_in_arrival_order():
-            snapshot = await message.get_snapshot()
+    def process_messages(account) -> bool:
+        for message in account.get_fresh_messages_in_arrival_order():
+            snapshot = message.get_snapshot()
             received = int(snapshot.text)
             now = time.time()
             print(f"{received},{now - start_time}")
             if received < limit:
-                await snapshot.chat.send_text(str(received + window))
+                snapshot.chat.send_text(str(received + window))
             else:
-                await snapshot.chat.send_text("STOP")
-            await snapshot.message.mark_seen()
+                snapshot.chat.send_text("STOP")
+            snapshot.message.mark_seen()
 
             if received >= limit:
                 return True
         return False
 
-    async def pinger_process(account):
+    def pinger_process(account):
         while True:
-            event = await account.wait_for_event()
+            event = account.wait_for_event()
             if event["type"] == EventType.INFO:
                 logging.info("%s", event["msg"])
             elif event["type"] == EventType.WARNING:
@@ -74,12 +75,12 @@ async def run(api, window, limit):
                 logging.error("%s", event["msg"])
             elif event["type"] == EventType.INCOMING_MSG:
                 logging.info("Got an incoming message")
-                if await process_messages(account):
+                if process_messages(account):
                     return
 
-    async def echo_process(account):
+    def echo_process(account):
         while True:
-            event = await account.wait_for_event()
+            event = account.wait_for_event()
             if event["type"] == EventType.INFO:
                 logging.info("%s", event["msg"])
             elif event["type"] == EventType.WARNING:
@@ -89,34 +90,36 @@ async def run(api, window, limit):
             elif event["type"] == EventType.INCOMING_MSG:
                 logging.info("Got an incoming message")
 
-                for message in await account.get_fresh_messages_in_arrival_order():
-                    snapshot = await message.get_snapshot()
+                for message in account.get_fresh_messages_in_arrival_order():
+                    snapshot = message.get_snapshot()
                     received = snapshot.text
                     if received == "STOP":
                         return
-                    await snapshot.chat.send_text(snapshot.text)
-                    await snapshot.message.mark_seen()
+                    snapshot.chat.send_text(snapshot.text)
+                    snapshot.message.mark_seen()
 
-    ponger_addr = await accounts[1].get_config("addr")
-    pinger_ponger_contact = await accounts[0].create_contact(ponger_addr, "")
-    pinger_ponger_chat = await pinger_ponger_contact.create_chat()
+    ponger_addr = accounts[1].get_config("addr")
+    pinger_ponger_contact = accounts[0].create_contact(ponger_addr, "")
+    pinger_ponger_chat = pinger_ponger_contact.create_chat()
 
     logging.info("Creating tasks")
-    ponger = asyncio.create_task(echo_process(accounts[1]))
-    pinger = asyncio.create_task(pinger_process(accounts[0]))
+    ponger = Thread(target=echo_process, args=(accounts[1],))
+    pinger = Thread(target=pinger_process, args=(accounts[0],))
+    pinger.start()
+    ponger.start()
 
     logging.info("Sending text")
     for i in range(window):
-        await pinger_ponger_chat.send_text(str(1 + i))
+        pinger_ponger_chat.send_text(str(1 + i))
     start_time = time.time()
 
-    await pinger
-    await ponger
+    pinger.join()
+    ponger.join()
 
 
-async def run_bot(window, limit):
+def run_bot(window, limit):
     logging.basicConfig(level=logging.ERROR)
     with tempfile.TemporaryDirectory() as tmpdirname:
-        async with Rpc(accounts_dir=Path(tmpdirname) / "accounts") as rpc:
+        with Rpc(accounts_dir=Path(tmpdirname) / "accounts") as rpc:
             api = DeltaChat(rpc)
-            await run(api, window, limit)
+            run(api, window, limit)

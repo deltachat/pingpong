@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pingpong"
 description = "Delta Chat bot to send ping-pong messages back and forth and measure latency"
 dependencies = [
-    "deltachat-rpc-client@git+https://github.com/deltachat/deltachat-core-rust.git#subdirectory=deltachat-rpc-client",
+    "deltachat-rpc-client@git+https://github.com/deltachat/deltachat-core-rust.git@stable#subdirectory=deltachat-rpc-client",
     "click"
 ]
 version = "0.1"
