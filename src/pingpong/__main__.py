@@ -1,4 +1,3 @@
-import asyncio
 import click
 from . import run_bot
 
@@ -9,7 +8,7 @@ from . import run_bot
     "--window", default=1, help="Number of messages to send at the same time."
 )
 def pingpong(window, limit):
-    asyncio.run(run_bot(window, limit))
+    run_bot(window, limit)
 
 
 if __name__ == "__main__":
