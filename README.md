@@ -74,7 +74,19 @@ $ env/bin/python -m pingpong >out.csv
 
 ## Process the results
 
-Install [Matplotlib](https://matplotlib.org/) to plot the results
+There is a `stat.pl` Perl script analyzing the output file printing basic statistics,
+for example:
+```
+$ ./stat.pl out.csv
+min:    1.12097477912903
+p05:    1.12548685073853
+median: 1.14409327507019
+p95:    1.20510101318359
+max:    1.22065734863281
+```
+
+If you want to visualize the data,
+install [Matplotlib](https://matplotlib.org/) to plot the results
 and [pandas](https://pandas.pydata.org/) to process the collected data:
 ```
 . env/bin/activate
