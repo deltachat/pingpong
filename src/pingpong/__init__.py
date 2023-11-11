@@ -49,22 +49,6 @@ def run(api, window, limit):
         accounts.append(account)
     logging.info("Configured accounts")
 
-    def process_messages(account) -> bool:
-        for message in account.get_fresh_messages_in_arrival_order():
-            snapshot = message.get_snapshot()
-            received = int(snapshot.text)
-            now = time.time()
-            print(f"{received},{now - start_time}")
-            if received < limit:
-                snapshot.chat.send_text(str(received + window))
-            else:
-                snapshot.chat.send_text("STOP")
-            snapshot.message.mark_seen()
-
-            if received >= limit:
-                return True
-        return False
-
     def pinger_process(account):
         while True:
             event = account.wait_for_event()
@@ -76,8 +60,20 @@ def run(api, window, limit):
                 logging.error("%s", event["msg"])
             elif event["kind"] == EventType.INCOMING_MSG:
                 logging.info("Got an incoming message")
-                if process_messages(account):
-                    return
+
+                message = account.get_message_by_id(event["msg_id"])
+                snapshot = message.get_snapshot()
+                received = int(snapshot.text)
+                now = time.time()
+                print(f"{received},{now - start_time}")
+                if received < limit:
+                    snapshot.chat.send_text(str(received + window))
+                else:
+                    snapshot.chat.send_text("STOP")
+                snapshot.message.mark_seen()
+
+                if received >= limit:
+                    return True
 
     def echo_process(account):
         while True:
@@ -91,13 +87,12 @@ def run(api, window, limit):
             elif event["kind"] == EventType.INCOMING_MSG:
                 logging.info("Got an incoming message")
 
-                for message in account.get_fresh_messages_in_arrival_order():
-                    snapshot = message.get_snapshot()
-                    received = snapshot.text
-                    if received == "STOP":
-                        return
-                    snapshot.chat.send_text(snapshot.text)
-                    snapshot.message.mark_seen()
+                message = account.get_message_by_id(event["msg_id"])
+                snapshot = message.get_snapshot()
+                received = snapshot.text
+                if received == "STOP":
+                    return
+                snapshot.chat.send_text(snapshot.text)
 
     ponger_addr = accounts[1].get_config("addr")
     pinger_ponger_contact = accounts[0].create_contact(ponger_addr, "")
