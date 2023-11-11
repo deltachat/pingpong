@@ -119,7 +119,7 @@ def run(api, window, limit):
 
 
 def run_bot(window, limit):
-    logging.basicConfig(level=logging.ERROR)
+    logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(message)s")
     with tempfile.TemporaryDirectory() as tmpdirname:
         with Rpc(accounts_dir=Path(tmpdirname) / "accounts") as rpc:
             api = DeltaChat(rpc)
