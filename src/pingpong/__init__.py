@@ -5,6 +5,7 @@ import sys
 import random
 import tempfile
 import time
+import concurrent.futures
 from pathlib import Path
 from threading import Thread
 
@@ -21,33 +22,55 @@ def get_temp_credentials() -> dict:
     return {"email": addr, "password": password}
 
 
+def make_accounts(num, account_maker):
+    """Test that long-running task does not block short-running task from completion."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num) as executor:
+        futures = [executor.submit(account_maker) for i in range(num)]
+        done, pending = concurrent.futures.wait(futures)
+        return [x.result() for x in done]
+
+
+def create_account(api):
+    account = api.add_account()
+
+    account.set_config("bot", "1")
+    account.set_config("bcc_self", "0")
+    account.set_config("mvbox_move", "0")
+    account.set_config("mdns_enabled", "0")
+    account.set_config("e2ee_enabled", "0")
+
+    account.set_config("mail_port", "993")
+    account.set_config("send_port", "465")
+
+    account.set_config("socks5_enabled", "0")
+    account.set_config("socks5_host", "127.0.0.1")
+    account.set_config("socks5_port", "9050")
+
+    assert not account.is_configured()
+
+    creds = get_temp_credentials()
+    account.set_config("addr", creds["email"])
+    account.set_config("mail_pw", creds["password"])
+    account.configure()
+    account.start_io()
+    return account
+
+
 def run(api, window, limit):
-    accounts = []
-    for _ in range(2):
-        creds = get_temp_credentials()
-        account = api.add_account()
-
-        account.set_config("bot", "1")
-        account.set_config("bcc_self", "0")
-        account.set_config("mvbox_move", "0")
-        account.set_config("mdns_enabled", "0")
-        account.set_config("e2ee_enabled", "0")
-
-        account.set_config("mail_port", "993")
-        account.set_config("send_port", "465")
-
-        account.set_config("socks5_enabled", "0")
-        account.set_config("socks5_host", "127.0.0.1")
-        account.set_config("socks5_port", "9050")
-
-        assert not account.is_configured()
-
-        account.set_config("addr", creds["email"])
-        account.set_config("mail_pw", creds["password"])
-        account.configure()
-        account.start_io()
-        accounts.append(account)
+    now = time.time()
+    def elapsed():
+        el = time.time() - now
+        return f"{el:0.2f}"
+    print(f"make accounts {elapsed()} started")
+    accounts = make_accounts(window, lambda: create_account(api))
+    print(f"make accounts {elapsed()} finished")
     logging.info("Configured accounts")
+
+    ping_start_times = {}
+
+    def send_ping(chat, num):
+        ping_start_times[num] = time.time()
+        chat.send_text(f"{num}")
 
     def pinger_process(account):
         while True:
@@ -65,9 +88,9 @@ def run(api, window, limit):
                 snapshot = message.get_snapshot()
                 received = int(snapshot.text)
                 now = time.time()
-                print(f"{received},{now - start_time}")
+                print(f"{received},{now - ping_start_times[received]}")
                 if received < limit:
-                    snapshot.chat.send_text(str(received + window))
+                    send_ping(snapshot.chat, received + window)
                 else:
                     snapshot.chat.send_text("STOP")
                 snapshot.message.mark_seen()
@@ -106,8 +129,7 @@ def run(api, window, limit):
 
     logging.info("Sending text")
     for i in range(window):
-        pinger_ponger_chat.send_text(str(1 + i))
-    start_time = time.time()
+        send_ping(pinger_ponger_chat, i + 1)
 
     pinger.join()
     ponger.join()
