@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import sys
@@ -7,7 +6,6 @@ import tempfile
 import time
 import concurrent.futures
 from pathlib import Path
-from threading import Thread
 
 from deltachat_rpc_client import DeltaChat, EventType, Rpc
 
