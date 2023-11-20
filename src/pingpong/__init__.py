@@ -110,9 +110,9 @@ class PongerProcess:
 def run(api, proc, num_pings):
     elapsed = Elapsed()
 
-    print(f"make accounts {elapsed} started")
+    print(f"making {proc} accounts", file=sys.stderr)
     accounts = make_accounts(proc * 2, lambda: create_account(api))
-    print(f"make accounts finished, took {elapsed}")
+    print(f"{proc} accounts finished, took {elapsed}", file=sys.stderr)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=proc * 2) as executor:
         for i in range(proc):
