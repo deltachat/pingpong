@@ -56,26 +56,30 @@ def create_account(api):
     return account
 
 
-def run(api, window, limit):
-    now = time.time()
-    def elapsed():
-        el = time.time() - now
-        return f"{el:0.2f}"
+class Elapsed:
+    def __init__(self):
+        self.start = time.time()
 
-    print(f"make accounts {elapsed()} started")
+    def __call__(self):
+        return time.time() - self.start
+
+    def __str__(self):
+        return f"{self():0.2f}s"
+
+
+def run(api, window, count):
+    elapsed = Elapsed()
+
+    print(f"make accounts {elapsed} started")
     accounts = make_accounts(window * 2, lambda: create_account(api))
-    print(f"make accounts {elapsed()} finished")
+    print(f"make accounts finished, took {elapsed}")
 
     ping_start_times = {}
 
-    def send_ping(chat, num):
-        ping_start_times[num] = time.time()
-        chat.send_text(f"{num}")
-        # print(f"ping seq={num}")
-
     def pinger_process(account, chat, num):
         while True:
-            send_ping(chat, num)
+            ping_start_times[num] = time.time()
+            chat.send_text(f"{num}")
 
             while True:
                 event = account.wait_for_event()
@@ -93,7 +97,7 @@ def run(api, window, limit):
                     assert int(snapshot.text) == num
                     print(f"{num},{now - ping_start_times[num]}")
                     num += window
-                    if num >= limit:
+                    if num >= count:
                         snapshot.chat.send_text("STOP")
                         return True
                     snapshot.message.mark_seen()
@@ -132,9 +136,9 @@ def run(api, window, limit):
         return [x.result() for x in done]
 
 
-def run_bot(window, limit):
+def run_bot(window, count):
     logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(message)s")
     with tempfile.TemporaryDirectory() as tmpdirname:
         with Rpc(accounts_dir=Path(tmpdirname) / "accounts") as rpc:
             api = DeltaChat(rpc)
-            run(api, window, limit)
+            run(api, window, count)

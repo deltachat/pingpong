@@ -3,12 +3,12 @@ from . import run_bot
 
 
 @click.command()
-@click.option("--limit", default=100, help="Maximum number of messages to send.")
+@click.option("--count", default=100, help="Maximum number of messages to send.")
 @click.option(
     "--window", default=1, help="Number of messages to send at the same time."
 )
-def pingpong(window, limit):
-    run_bot(window, limit)
+def pingpong(window, count):
+    run_bot(window, count)
 
 
 if __name__ == "__main__":
