@@ -11,3 +11,6 @@ dependencies = [
     "click"
 ]
 version = "0.1"
+
+[project.scripts]
+pingpong = "pingpong.__main__:pingpong"
