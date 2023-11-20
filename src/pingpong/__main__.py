@@ -3,12 +3,17 @@ from . import run_bot
 
 
 @click.command()
-@click.option("--count", default=100, help="Maximum number of messages to send.")
 @click.option(
-    "--window", default=1, help="Number of messages to send at the same time."
+    "--num-pings", "-n", default=10, help="Number of pings to send in each ping-process"
 )
-def pingpong(window, count):
-    run_bot(window, count)
+@click.option(
+    "--proc",
+    "-p",
+    default=1,
+    help="Number of ping/pong processes to run concurrently. ",
+)
+def pingpong(proc, num_pings):
+    run_bot(proc, num_pings)
 
 
 if __name__ == "__main__":

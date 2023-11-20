@@ -89,12 +89,11 @@ class PingerProcess:
 
     def __call__(self):
         for seq in range(self.num_pings):
-            ping_start = time.time()
+            elapsed = Elapsed()
             self.chat.send_text(f"{seq}")
             num = int(get_next_incoming_message_snapshot(self.account).text)
             assert num == seq
-            elapsed = time.time() - ping_start
-            print(f"{num},{elapsed}")
+            print(f"{num},{elapsed()}")
 
 
 class PongerProcess:
@@ -108,24 +107,21 @@ class PongerProcess:
             snapshot.chat.send_text(snapshot.text)
 
 
-def run(api, window, count):
+def run(api, proc, num_pings):
     elapsed = Elapsed()
 
     print(f"make accounts {elapsed} started")
-    accounts = make_accounts(window * 2, lambda: create_account(api))
+    accounts = make_accounts(proc * 2, lambda: create_account(api))
     print(f"make accounts finished, took {elapsed}")
 
-
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=window*2) as executor:
-        for i in range(window):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=proc * 2) as executor:
+        for i in range(proc):
             ac_ping = accounts[i]
-            ac_pong = accounts[i + window]
+            ac_pong = accounts[i + proc]
             pong_addr = ac_pong.get_config("addr")
             chat = ac_ping.create_contact(pong_addr, "").create_chat()
             ac_ping.desc = f"ping-{i}"
             ac_pong.desc = f"pong-{i}"
-            num_pings = count // window
             futures = [
                 executor.submit(PingerProcess(ac_ping, chat, num_pings)),
                 executor.submit(PongerProcess(ac_pong, num_pings)),
@@ -135,9 +131,9 @@ def run(api, window, count):
         return [x.result() for x in done]
 
 
-def run_bot(window, count):
+def run_bot(proc, num_pings):
     logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(message)s")
     with tempfile.TemporaryDirectory() as tmpdirname:
         with Rpc(accounts_dir=Path(tmpdirname) / "accounts") as rpc:
             api = DeltaChat(rpc)
-            run(api, window, count)
+            run(api, proc, num_pings)
