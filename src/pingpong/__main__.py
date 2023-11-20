@@ -10,10 +10,16 @@ from . import run_bot
     "--proc",
     "-p",
     default=1,
-    help="Number of ping/pong processes to run concurrently. ",
+    help="Number of ping/pong processes to run concurrently (default 1). ",
 )
-def pingpong(proc, num_pings):
-    run_bot(proc, num_pings)
+@click.option(
+    "--window",
+    "-w",
+    default=1,
+    help="Num of simultanous pings per process (default 1)",
+)
+def pingpong(proc, num_pings, window):
+    run_bot(proc, num_pings, window)
 
 
 if __name__ == "__main__":

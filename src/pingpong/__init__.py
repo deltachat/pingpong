@@ -83,18 +83,30 @@ def get_next_incoming_message_snapshot(account):
 
 
 class PingerProcess:
-    def __init__(self, account, chat, num_pings):
+    def __init__(self, account, chat, num_pings, window, reportfunc):
+        assert window <= num_pings
         self.account = account
         self.chat = chat
         self.num_pings = num_pings
+        self.window = window
+        self.reportfunc = reportfunc
 
     def __call__(self):
-        for seq in range(self.num_pings):
-            elapsed = Elapsed()
-            self.chat.send_text(f"{seq}")
+        ping2start = {}
+
+        def receive_one_pong():
             num = int(get_next_incoming_message_snapshot(self.account).text)
-            assert num == seq
-            print(f"{num},{elapsed()}")
+            elapsed = ping2start.pop(num)()
+            self.reportfunc(self.account, num, elapsed)
+
+        for seq in range(self.num_pings):
+            ping2start[seq] = Elapsed()
+            self.chat.send_text(f"{seq}")
+            if len(ping2start) == self.window:
+                receive_one_pong()
+
+        while ping2start:
+            receive_one_pong()
 
 
 class PongerProcess:
@@ -108,7 +120,7 @@ class PongerProcess:
             snapshot.chat.send_text(snapshot.text)
 
 
-def run(api, proc, num_pings):
+def run(api, proc, num_pings, window):
     elapsed = Elapsed()
 
     print(f"making {proc} ping-accounts and {proc} pong-accounts", file=sys.stderr)
@@ -117,6 +129,9 @@ def run(api, proc, num_pings):
     print(
         f"finished, took {elapsed} ({speed:0.02f} accounts per second)", file=sys.stderr
     )
+
+    def reportfunc(account, num, elapsed):
+        print(f"{num},{elapsed}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=proc * 2) as executor:
         for i in range(proc):
@@ -127,7 +142,9 @@ def run(api, proc, num_pings):
             ac_ping.desc = f"ping-{i}"
             ac_pong.desc = f"pong-{i}"
             futures = [
-                executor.submit(PingerProcess(ac_ping, chat, num_pings)),
+                executor.submit(
+                    PingerProcess(ac_ping, chat, num_pings, window, reportfunc)
+                ),
                 executor.submit(PongerProcess(ac_pong, num_pings)),
             ]
         done, pending = concurrent.futures.wait(futures)
@@ -135,9 +152,9 @@ def run(api, proc, num_pings):
         return [x.result() for x in done]
 
 
-def run_bot(proc, num_pings):
+def run_bot(proc, num_pings, window):
     logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(message)s")
     with tempfile.TemporaryDirectory() as tmpdirname:
         with Rpc(accounts_dir=Path(tmpdirname) / "accounts") as rpc:
             api = DeltaChat(rpc)
-            run(api, proc, num_pings)
+            run(api, proc, num_pings, window)
