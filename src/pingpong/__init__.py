@@ -67,6 +67,47 @@ class Elapsed:
         return f"{self():0.2f}s"
 
 
+def get_next_incoming_message_snapshot(account):
+    while True:
+        event = account.wait_for_event()
+        if event["kind"] == EventType.INFO:
+            logging.info(f"{account.desc} {event['msg']}")
+        elif event["kind"] == EventType.WARNING:
+            logging.warning(f"{account.desc} {event['msg']}")
+        elif event["kind"] == EventType.ERROR:
+            logging.error(f"{account.desc} {event['msg']}")
+        elif event["kind"] == EventType.INCOMING_MSG:
+            message = account.get_message_by_id(event["msg_id"])
+            return message.get_snapshot()
+
+
+class PingerProcess:
+    def __init__(self, account, chat, num_pings):
+        self.account = account
+        self.chat = chat
+        self.num_pings = num_pings
+
+    def __call__(self):
+        for seq in range(self.num_pings):
+            ping_start = time.time()
+            self.chat.send_text(f"{seq}")
+            num = int(get_next_incoming_message_snapshot(self.account).text)
+            assert num == seq
+            elapsed = time.time() - ping_start
+            print(f"{num},{elapsed}")
+
+
+class PongerProcess:
+    def __init__(self, account, num_pings):
+        self.account = account
+        self.num_pings = num_pings
+
+    def __call__(self):
+        for i in range(self.num_pings):
+            snapshot = get_next_incoming_message_snapshot(self.account)
+            snapshot.chat.send_text(snapshot.text)
+
+
 def run(api, window, count):
     elapsed = Elapsed()
 
@@ -74,52 +115,7 @@ def run(api, window, count):
     accounts = make_accounts(window * 2, lambda: create_account(api))
     print(f"make accounts finished, took {elapsed}")
 
-    ping_start_times = {}
 
-    def pinger_process(account, chat, num):
-        while True:
-            ping_start_times[num] = time.time()
-            chat.send_text(f"{num}")
-
-            while True:
-                event = account.wait_for_event()
-                if event["kind"] == EventType.INFO:
-                    logging.info(f"{account.desc} {event['msg']}")
-                elif event["kind"] == EventType.WARNING:
-                    logging.warning(f"{account.desc} {event['msg']}")
-                elif event["kind"] == EventType.ERROR:
-                    logging.error(f"{account.desc} {event['msg']}")
-                elif event["kind"] == EventType.INCOMING_MSG:
-                    logging.info("Got an incoming message")
-                    now = time.time()
-                    message = account.get_message_by_id(event["msg_id"])
-                    snapshot = message.get_snapshot()
-                    assert int(snapshot.text) == num
-                    print(f"{num},{now - ping_start_times[num]}")
-                    num += window
-                    if num >= count:
-                        snapshot.chat.send_text("STOP")
-                        return True
-                    snapshot.message.mark_seen()
-                    break
-
-    def ponger_process(account):
-        while True:
-            event = account.wait_for_event()
-            if event["kind"] == EventType.INFO:
-                logging.info(f"{account.desc} {event['msg']}")
-            elif event["kind"] == EventType.WARNING:
-                logging.warning(f"{account.desc} {event['msg']}")
-            elif event["kind"] == EventType.ERROR:
-                logging.error(f"{account.desc} {event['msg']}")
-            elif event["kind"] == EventType.INCOMING_MSG:
-                logging.info("Got an incoming message")
-                message = account.get_message_by_id(event["msg_id"])
-                snapshot = message.get_snapshot()
-                received = snapshot.text
-                if received == "STOP":
-                    return
-                snapshot.chat.send_text(snapshot.text)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=window*2) as executor:
         for i in range(window):
@@ -129,8 +125,11 @@ def run(api, window, count):
             chat = ac_ping.create_contact(pong_addr, "").create_chat()
             ac_ping.desc = f"ping-{i}"
             ac_pong.desc = f"pong-{i}"
-            futures = [executor.submit(lambda: pinger_process(ac_ping, chat, i))]
-            futures.append(executor.submit(lambda: ponger_process(ac_pong)))
+            num_pings = count // window
+            futures = [
+                executor.submit(PingerProcess(ac_ping, chat, num_pings)),
+                executor.submit(PongerProcess(ac_pong, num_pings)),
+            ]
         done, pending = concurrent.futures.wait(futures)
         assert not pending
         return [x.result() for x in done]
