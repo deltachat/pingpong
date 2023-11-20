@@ -32,7 +32,6 @@ def make_accounts(num, account_maker):
 
 def create_account(api):
     account = api.add_account()
-
     account.set_config("bot", "1")
     account.set_config("bcc_self", "0")
     account.set_config("mvbox_move", "0")
@@ -51,7 +50,11 @@ def create_account(api):
     creds = get_temp_credentials()
     account.set_config("addr", creds["email"])
     account.set_config("mail_pw", creds["password"])
+    domain = creds["email"].split("@")[1]
+    account.set_config("mail_server", domain)
+    account.set_config("send_server", domain)
     account.configure()
+    # print(f"account configured {creds['email']}", file=sys.stderr)
     account.start_io()
     return account
 
@@ -110,9 +113,12 @@ class PongerProcess:
 def run(api, proc, num_pings):
     elapsed = Elapsed()
 
-    print(f"making {proc} accounts", file=sys.stderr)
+    print(f"making {proc} ping-accounts and {proc} pong-accounts", file=sys.stderr)
     accounts = make_accounts(proc * 2, lambda: create_account(api))
-    print(f"{proc} accounts finished, took {elapsed}", file=sys.stderr)
+    speed = proc * 2 / elapsed()
+    print(
+        f"finished, took {elapsed} ({speed:0.02f} accounts per second)", file=sys.stderr
+    )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=proc * 2) as executor:
         for i in range(proc):
