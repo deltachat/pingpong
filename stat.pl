@@ -11,7 +11,7 @@ while (my $line = <$data>) {
   chomp $line;
   my @fields = split "," , $line;
   if (defined $prev) {
-     push(@values, $fields[1] - $prev)
+     push(@values, $fields[1])
   }
   $prev = $fields[1]
 }
